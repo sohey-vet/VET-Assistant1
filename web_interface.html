@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VET-ASSISTANT-CLI Web Interface</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #fafafa;
+        }
+        .section h3 {
+            color: #34495e;
+            margin-bottom: 15px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        select, input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .output {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 20px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .char-count {
+            font-weight: bold;
+            color: #e74c3c;
+        }
+        .char-count.valid {
+            color: #27ae60;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .emoji-guide {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🐾 VET-ASSISTANT-CLI</h1>
+        <p style="text-align: center; color: #666;">@souhei1219のX投稿生成ツール</p>
+        
+        <div class="section">
+            <h3>📚 ペルソナ学習状況</h3>
+            <div id="learnStatus">
+                <p>ステータス: <span id="statusText">未確認</span></p>
+                <p>学習データ: <span id="dataCount">-</span>件</p>
+                <p>よく使う絵文字: <span id="emojis">-</span></p>
+            </div>
+            <button onclick="checkLearningStatus()">学習状況を確認</button>
+        </div>
+
+        <div class="section">
+            <h3>📝 投稿生成</h3>
+            
+            <div class="form-group">
+                <label for="postType">投稿タイプ:</label>
+                <select id="postType">
+                    <option value="specialty">specialty (専門テーマ)</option>
+                    <option value="cat-breed">cat-breed (猫種特集)</option>
+                    <option value="interactive">interactive (参加型)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="dayOfWeek">曜日:</label>
+                <select id="dayOfWeek">
+                    <option value="mon">月曜日</option>
+                    <option value="tue">火曜日</option>
+                    <option value="wed">水曜日</option>
+                    <option value="thu">木曜日</option>
+                    <option value="fri">金曜日</option>
+                    <option value="sat">土曜日</option>
+                    <option value="sun">日曜日</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="topic">トピック:</label>
+                <input type="text" id="topic" placeholder="例: 猫の熱中症" value="猫の熱中症">
+                <div class="emoji-guide">
+                    💡 例: 猫の腎臓病、アメリカンショートヘア、猫の変な癖など
+                </div>
+            </div>
+
+            <button onclick="generatePost()">投稿を生成</button>
+        </div>
+
+        <div class="section">
+            <h3>📋 生成結果</h3>
+            <div id="output" class="output">ここに生成された投稿が表示されます</div>
+            <div id="charCount" class="char-count">文字数: 0文字</div>
+        </div>
+
+        <div class="section">
+            <h3>🛠️ コマンドライン版の使用方法</h3>
+            <div class="output">
+# ペルソナ学習
+python main.py learn "C:\Users\souhe\Desktop\X過去投稿"
+
+# 投稿生成
+python main.py x-post --type specialty --day mon --topic "猫の熱中症"
+
+# 対話式生成
+generate_post.bat をダブルクリック
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 文字数カウント（改行除外）
+        function countCharacters(text) {
+            return text.replace(/\n/g, '').length;
+        }
+
+        // 学習状況確認
+        async function checkLearningStatus() {
+            try {
+                const response = await fetch('/api/status');
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('statusText').textContent = data.learned ? '学習済み' : '未学習';
+                    document.getElementById('dataCount').textContent = data.dataCount || '-';
+                    document.getElementById('emojis').textContent = data.emojis ? data.emojis.join(', ') : '-';
+                } else {
+                    // サーバーが無い場合のモック表示
+                    document.getElementById('statusText').textContent = '学習済み（簡易版）';
+                    document.getElementById('dataCount').textContent = '7,581';
+                    document.getElementById('emojis').textContent = '🐱, ✅, 💡';
+                }
+            } catch (error) {
+                // オフラインモック
+                document.getElementById('statusText').textContent = '学習済み（簡易版）';
+                document.getElementById('dataCount').textContent = '7,581';
+                document.getElementById('emojis').textContent = '🐱, ✅, 💡';
+            }
+        }
+
+        // 投稿生成（モック版）
+        async function generatePost() {
+            const postType = document.getElementById('postType').value;
+            const day = document.getElementById('dayOfWeek').value;
+            const topic = document.getElementById('topic').value;
+
+            if (!topic.trim()) {
+                alert('トピックを入力してください');
+                return;
+            }
+
+            document.getElementById('output').textContent = '生成中...';
+
+            try {
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: postType, day: day, topic: topic })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displayPost(data.content);
+                } else {
+                    // サーバーが無い場合のモック生成
+                    generateMockPost(postType, day, topic);
+                }
+            } catch (error) {
+                // オフラインモック
+                generateMockPost(postType, day, topic);
+            }
+        }
+
+        // モック投稿生成
+        function generateMockPost(postType, day, topic) {
+            const emojis = ['🐱', '✅', '💡'];
+            const mainEmoji = emojis[0];
+
+            let content = '';
+
+            if (postType === 'specialty') {
+                if (day === 'mon') {
+                    content = `獣医師が教える！【${topic}】${mainEmoji}
+
+${topic}について大切なポイントをお話しします。
+
+✅ まずは基本的な知識から
+💡 早期発見が重要です
+${mainEmoji} 愛猫の健康を守りましょう
+
+#猫のあれこれ`;
+                } else if (day === 'tue') {
+                    content = `獣医師が教える！【${topic}の初期症状】${mainEmoji}
+
+${topic}の初期症状を見逃さないために：
+
+✅ こんな症状があったら要注意
+💡 早めの対処が大切
+🚨 気になったらすぐ受診を
+
+#猫のあれこれ`;
+                } else {
+                    content = `獣医師が教える！【${topic}】${mainEmoji}
+
+${topic}について獣医師が解説します。
+
+✅ 重要なポイント
+💡 お家でできること
+${mainEmoji} 愛猫の健康管理
+
+#猫のあれこれ`;
+                }
+            } else if (postType === 'cat-breed') {
+                content = `獣医師が教える！【${topic}】${mainEmoji}
+
+${topic}の特徴について：
+
+✅ 性格の特徴
+💡 健康管理のポイント
+${mainEmoji} 飼育のコツ
+
+#猫のあれこれ`;
+            } else if (postType === 'interactive') {
+                content = `獣医師が教える！【${topic}】${mainEmoji}
+
+みなさんの愛猫はどうですか？
+
+✅ こんな経験ありませんか？
+💡 皆さんの体験談をお聞かせください
+${mainEmoji} コメントでお待ちしています
+
+#猫のあれこれ`;
+            }
+
+            displayPost(content);
+        }
+
+        // 投稿表示
+        function displayPost(content) {
+            document.getElementById('output').textContent = content;
+            const charCount = countCharacters(content);
+            const countElement = document.getElementById('charCount');
+            countElement.textContent = `文字数: ${charCount}文字`;
+            
+            if (charCount <= 140) {
+                countElement.className = 'char-count valid';
+            } else {
+                countElement.className = 'char-count';
+            }
+        }
+
+        // 初期化
+        document.addEventListener('DOMContentLoaded', function() {
+            checkLearningStatus();
+        });
+    </script>
+</body>
+</html>

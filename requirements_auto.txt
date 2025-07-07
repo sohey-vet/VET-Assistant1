@@ -1,0 +1,12 @@
+google-generativeai==0.3.2
+pandas==2.0.3
+openpyxl==3.1.2
+tweepy==4.14.0
+schedule==1.2.0
+pathlib
+argparse
+json
+re
+datetime
+threading
+time

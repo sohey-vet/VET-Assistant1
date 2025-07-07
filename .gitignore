@@ -1,0 +1,60 @@
+# VET-ASSISTANT-CLI .gitignore
+
+# 設定ファイル（APIキーが含まれる可能性）
+config.json
+persona_data.json
+
+# 生成されたファイル
+投稿スケジュール.xlsx
+投稿スケジュール.csv
+*.xlsx
+*.csv
+
+# ログファイル
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 仮想環境
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Twitter API認証情報（重要）
+twitter_config.json
+api_keys.json
+
+# テストファイル
+test_*.py
+*_test.py

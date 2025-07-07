@@ -1,0 +1,6 @@
+google-generativeai==0.3.2
+pathlib
+argparse
+json
+re
+datetime
