@@ -12,6 +12,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 import google.generativeai as genai
+from duplicate_checker import DuplicateChecker
 
 class VetAssistantCLI:
     def __init__(self):
@@ -19,6 +20,7 @@ class VetAssistantCLI:
         self.persona_file = Path("persona_data.json")
         self.api_key = "AIzaSyAA0eEtEXToBEtZSrdllKJYZdkHQDrfgik"
         self.persona_data = {}
+        self.duplicate_checker = DuplicateChecker()
         self.load_config()
         self.setup_gemini()
     
@@ -167,8 +169,8 @@ JSON形式で回答してください。
         else:
             return "参加型コンテンツ強化週"
     
-    def generate_post(self, post_type, day, topic):
-        """投稿を生成"""
+    def generate_post(self, post_type, day, topic, max_attempts=3):
+        """投稿を生成（重複チェック付き）"""
         if not self.config.get("learned", False):
             print("❌ 先にlearnコマンドを実行してください")
             return None
@@ -177,6 +179,39 @@ JSON形式で回答してください。
             print("❌ ペルソナデータが見つかりません")
             return None
         
+        # 重複チェックを含む投稿生成を試行
+        for attempt in range(max_attempts):
+            print(f"🔄 投稿生成試行 {attempt + 1}/{max_attempts}")
+            
+            post_content, char_count = self._generate_single_post(post_type, day, topic)
+            if not post_content:
+                continue
+            
+            # 重複チェック実行
+            print("🔍 重複チェック実行中...")
+            is_duplicate, duplicate_info = self.duplicate_checker.check_duplicate(
+                post_content, topic, post_type, similarity_threshold=0.7
+            )
+            
+            if not is_duplicate:
+                print("✅ 重複なし - 投稿を承認")
+                # 投稿を履歴に保存
+                self.duplicate_checker.save_post(post_content, topic, post_type, day)
+                return post_content, char_count
+            else:
+                print(f"⚠️ 重複検出 - {len(duplicate_info)}件の類似投稿が見つかりました")
+                self._show_duplicate_info(duplicate_info)
+                
+                if attempt < max_attempts - 1:
+                    print("🔄 投稿を再生成します...")
+                    # より具体的な指示で再生成
+                    topic = f"{topic} (別のアプローチ)"
+        
+        print("❌ 重複のない投稿を生成できませんでした")
+        return None, 0
+        
+    def _generate_single_post(self, post_type, day, topic):
+        """単一投稿を生成（内部メソッド）"""
         # 曜日を日本語に変換
         day_map = {
             "mon": "月曜日", "tue": "火曜日", "wed": "水曜日", 
@@ -186,6 +221,21 @@ JSON形式で回答してください。
         
         # 投稿サイクル情報を取得
         cycle_info = self.get_post_cycle_info()
+        
+        # 既存の投稿履歴を取得して重複を避ける指示を追加
+        recent_posts = self.duplicate_checker.get_post_history(10)
+        recent_topics = [post['topic'] for post in recent_posts if post['topic']]
+        recent_keywords = []
+        for post in recent_posts:
+            recent_keywords.extend(post.get('keywords', []))
+        
+        avoid_instruction = ""
+        if recent_topics:
+            avoid_instruction += f"\n\n## 重複回避指示\n最近の投稿トピック: {', '.join(recent_topics[:5])}\n"
+        if recent_keywords:
+            common_keywords = [k for k, v in Counter(recent_keywords).most_common(10)]
+            avoid_instruction += f"よく使われたキーワード: {', '.join(common_keywords)}\n"
+            avoid_instruction += "上記のトピックやキーワードと重複しないよう、新しい視点や表現を使用してください。"
         
         # 投稿生成プロンプト
         prompt = f"""
@@ -198,6 +248,7 @@ JSON形式で回答してください。
 4. 専門用語は高校生でも理解できる言葉に言い換える
 5. 箇条書き（✅、💡、🐾など）を効果的に使用
 6. 改行を使って読みやすくする
+7. 過去の投稿と重複しないよう、独自性のある内容にする
 
 ## 投稿条件
 - 投稿タイプ: {post_type}
@@ -227,7 +278,7 @@ JSON形式で回答してください。
 - 土曜: お家でできるケア
 - 日曜: 総括、予防の重要性
 
-参加型コンテンツ強化週は読者との交流を重視した内容で。
+参加型コンテンツ強化週は読者との交流を重視した内容で。{avoid_instruction}
 
 投稿文のみを出力してください。
 """
@@ -276,6 +327,43 @@ JSON形式で回答してください。
         else:
             print("❌ 投稿生成に失敗しました")
             return None
+    
+    def _show_duplicate_info(self, duplicate_info):
+        """重複情報を表示"""
+        print("\n📋 重複検出詳細:")
+        print("="*60)
+        
+        for i, dup in enumerate(duplicate_info[:3], 1):  # 上位3件を表示
+            print(f"\n{i}. 類似度: {dup['similarity']:.2f} ({dup['type']})")
+            print(f"   トピック: {dup['topic']}")
+            print(f"   作成日: {dup['created_at']}")
+            print(f"   内容: {dup['content'][:50]}{'...' if len(dup['content']) > 50 else ''}")
+        
+        print("="*60)
+    
+    def show_post_history(self, limit=10):
+        """投稿履歴を表示"""
+        posts = self.duplicate_checker.get_post_history(limit)
+        
+        if not posts:
+            print("📝 投稿履歴がありません")
+            return
+        
+        print(f"\n📋 最近の投稿履歴 (最新{len(posts)}件):")
+        print("="*80)
+        
+        for post in posts:
+            print(f"\n📅 {post['created_at']}")
+            print(f"📝 トピック: {post['topic']}")
+            print(f"🏷️  タイプ: {post['post_type']} ({post['day']})")
+            print(f"📊 文字数: {post['char_count']}")
+            print(f"🔍 キーワード: {', '.join(post['keywords'][:5])}")
+            print(f"💬 内容: {post['content'][:60]}{'...' if len(post['content']) > 60 else ''}")
+            print("-" * 80)
+    
+    def clean_old_posts(self, days=90):
+        """古い投稿を削除"""
+        return self.duplicate_checker.clean_old_posts(days)
 
 def main():
     parser = argparse.ArgumentParser(description="VET-ASSISTANT-CLI: AI投稿生成アプリケーション")
@@ -293,6 +381,14 @@ def main():
                              required=True, help='曜日')
     xpost_parser.add_argument('--topic', required=True, help='トピック')
     
+    # historyコマンド
+    history_parser = subparsers.add_parser('history', help='投稿履歴表示')
+    history_parser.add_argument('--limit', type=int, default=10, help='表示件数（デフォルト: 10）')
+    
+    # cleanコマンド
+    clean_parser = subparsers.add_parser('clean', help='古い投稿履歴を削除')
+    clean_parser.add_argument('--days', type=int, default=90, help='保持日数（デフォルト: 90日）')
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -305,6 +401,10 @@ def main():
         app.learn_command(args.archive_path)
     elif args.command == 'x-post':
         app.x_post_command(args.type, args.day, args.topic)
+    elif args.command == 'history':
+        app.show_post_history(args.limit)
+    elif args.command == 'clean':
+        app.clean_old_posts(args.days)
 
 if __name__ == "__main__":
     main()

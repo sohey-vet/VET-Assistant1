@@ -19,6 +19,7 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 import tweepy
 import google.generativeai as genai
+from duplicate_checker import DuplicateChecker
 
 class AutoPostSystem:
     def __init__(self):
@@ -28,6 +29,7 @@ class AutoPostSystem:
         self.api_key = "AIzaSyAA0eEtEXToBEtZSrdllKJYZdkHQDrfgik"
         self.persona_data = {}
         self.twitter_api = None
+        self.duplicate_checker = DuplicateChecker()
         self.load_config()
         self.setup_gemini()
         
@@ -202,12 +204,38 @@ class AutoPostSystem:
         
         return posts_data
     
-    def generate_single_post(self, post_type, day, topic, day_jp):
-        """単一投稿を生成"""
-        if self.model:
-            return self.generate_with_gemini(post_type, day, topic, day_jp)
-        else:
-            return self.generate_template_post(post_type, day, topic)
+    def generate_single_post(self, post_type, day, topic, day_jp, max_attempts=3):
+        """単一投稿を生成（重複チェック付き）"""
+        for attempt in range(max_attempts):
+            print(f"🔄 投稿生成試行 {attempt + 1}/{max_attempts}")
+            
+            if self.model:
+                content = self.generate_with_gemini(post_type, day, topic, day_jp)
+            else:
+                content = self.generate_template_post(post_type, day, topic)
+            
+            if not content:
+                continue
+            
+            # 重複チェック実行
+            print("🔍 重複チェック実行中...")
+            is_duplicate, duplicate_info = self.duplicate_checker.check_duplicate(
+                content, topic, post_type, similarity_threshold=0.7
+            )
+            
+            if not is_duplicate:
+                print("✅ 重複なし - 投稿を承認")
+                # 投稿を履歴に保存
+                self.duplicate_checker.save_post(content, topic, post_type, day)
+                return content
+            else:
+                print(f"⚠️ 重複検出 - {len(duplicate_info)}件の類似投稿が見つかりました")
+                if attempt < max_attempts - 1:
+                    print("🔄 投稿を再生成します...")
+                    topic = f"{topic} (別のアプローチ)"
+        
+        print("❌ 重複のない投稿を生成できませんでした")
+        return None
     
     def generate_with_gemini(self, post_type, day, topic, day_jp):
         """Geminiを使用して投稿生成"""
